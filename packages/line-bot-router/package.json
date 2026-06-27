@@ -1,13 +1,37 @@
 {
   "name": "line-bot-router",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cloudflare Workers で動く config-driven な LINE Bot Router",
   "license": "MIT",
+  "author": "Yugo Terada",
+  "homepage": "https://github.com/aspick/line-bot-router",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aspick/line-bot-router.git",
+    "directory": "packages/line-bot-router"
+  },
+  "bugs": {
+    "url": "https://github.com/aspick/line-bot-router/issues"
+  },
+  "keywords": [
+    "line",
+    "line-bot",
+    "messaging-api",
+    "router",
+    "cloudflare-workers",
+    "cloudflare-d1",
+    "hono",
+    "webhook"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [
-    "src",
+    "dist",
     "migrations",
+    "LICENSE",
     "README.md"
   ],
   "exports": {
@@ -24,10 +48,29 @@
       "default": "./src/cloudflare/index.ts"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/core/index.d.ts",
+        "default": "./dist/core/index.js"
+      },
+      "./config": {
+        "types": "./dist/config/index.d.ts",
+        "default": "./dist/config/index.js"
+      },
+      "./cloudflare": {
+        "types": "./dist/cloudflare/index.d.ts",
+        "default": "./dist/cloudflare/index.js"
+      }
+    }
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx src/core/signature.test.ts src/core/routing.test.ts src/config/schema.test.ts src/cloudflare/handleServiceMessage.test.ts"
+    "test": "node --test --import tsx 'src/**/*.test.ts'",
+    "prepublishOnly": "pnpm run build",
+    "publint": "publint --strict ."
   },
   "dependencies": {
     "zod": "^3.23.8"
@@ -35,6 +78,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240620.0",
     "@types/node": "^26.0.1",
+    "publint": "^0.2.9",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3"
   }

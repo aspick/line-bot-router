@@ -77,7 +77,12 @@ pnpm --filter @templates/cloudflare-worker dev
 - [docs/messaging-api-proxy.md](./docs/messaging-api-proxy.md)
 - [docs/service-webhook.md](./docs/service-webhook.md)
 - [docs/security.md](./docs/security.md)
+- [docs/release.md](./docs/release.md)
+
+## CI
+
+GitHub Actions で `typecheck` / `test` / `build` / `publint` / `wrangler deploy --dry-run` を Node 22 で回します。`.github/workflows/ci.yml` 参照。
 
 ## ライセンス
 
-MIT
+MIT — [LICENSE](./LICENSE)
