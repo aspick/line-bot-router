@@ -158,10 +158,9 @@ export async function dispatchHandler(
         err instanceof Error ? err.message : String(err)
       }`,
     );
-    // 仮想 reply token は child に届かなかったので、未使用のまま D1 に残らないよう削除する。
-    if (virtualReplyToken) {
-      await input.storage.deleteVirtualReplyToken(virtualReplyToken);
-    }
+    // 仮想 reply token はここでは削除しない。AbortSignal.timeout や fetch reject の時点で
+    // POST body が child に到達済みの可能性があり、child は仮想 token を使って TTL (デフォルト 55s)
+    // 内に reply 可能。削除すると有効な reply が「invalid token」になる。未使用 token は TTL で reap される。
     return { routerReplied: false };
   }
 

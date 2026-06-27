@@ -212,6 +212,33 @@ test("regex match works when no command/mention matches", () => {
   assert.equal(decision.handler?.matchedBy, "regex");
 });
 
+test("regex match returns no match when text exceeds the length cap (preserves anchored semantics)", () => {
+  // ^a+$ would *match* a truncated prefix of 256 'a's, but the full text includes a '!'
+  // at the end that disqualifies it. Truncate-and-match would dispatch to the wrong handler.
+  const config = makeConfig([
+    {
+      id: "all-a",
+      endpoint: "https://example.com",
+      routing: { role: "handle", regex: ["^a+$"] },
+      delivery: baseDeliveryRouterNative,
+    },
+    {
+      id: "fallback",
+      endpoint: "https://fallback.example.com",
+      routing: { role: "fallback" },
+      delivery: baseDeliveryRouterNative,
+    },
+  ]);
+  const overLimit = "a".repeat(300) + "!";
+  const decision = decideRouting({
+    event: makeTextEvent(overLimit),
+    config,
+  });
+  // Must fall through to fallback, NOT match ^a+$ via a truncated prefix.
+  assert.equal(decision.handler?.service.id, "fallback");
+  assert.equal(decision.handler?.matchedBy, "fallback");
+});
+
 test("falls back to role:fallback when nothing else matched", () => {
   const config = makeConfig([
     {

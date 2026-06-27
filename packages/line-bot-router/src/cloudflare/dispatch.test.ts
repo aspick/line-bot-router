@@ -170,7 +170,7 @@ test("dispatchHandler cleans up virtual reply token when secret is missing", asy
   assert.deepEqual(storage.deleted, [`${VIRTUAL_REPLY_TOKEN_PREFIX}gen`]);
 });
 
-test("dispatchHandler cleans up virtual reply token when child fetch fails", async () => {
+test("dispatchHandler does NOT delete virtual reply token when child fetch fails (body may have arrived)", async () => {
   const storage = new InMemoryStorage();
   const service = makeService({
     delivery: {
@@ -182,6 +182,7 @@ test("dispatchHandler cleans up virtual reply token when child fetch fails", asy
     permissions: { sendMessages: true },
   });
   const fetchImpl = async (): Promise<Response> => {
+    // simulates AbortSignal.timeout firing — body may have already reached child
     throw new Error("network down");
   };
   const lineClient = new LineMessagingApiClient({
@@ -202,8 +203,9 @@ test("dispatchHandler cleans up virtual reply token when child fetch fails", asy
   });
 
   assert.equal(result.routerReplied, false);
-  assert.equal(storage.tokens.size, 0);
-  assert.deepEqual(storage.deleted, [`${VIRTUAL_REPLY_TOKEN_PREFIX}gen`]);
+  // The token must remain so a child that received the body can still reply within TTL.
+  assert.equal(storage.tokens.size, 1);
+  assert.deepEqual(storage.deleted, []);
 });
 
 test("dispatchHandler refuses to call LINE reply when service lacks sendMessages permission", async () => {

@@ -100,20 +100,18 @@ function matchMention(text: string, mentions: string[] | undefined): string | nu
 // JS RegExp は Cloudflare Workers では sandbox / timeout を持てない。
 // operator が config で渡す regex はリモートからは制御不能だが、極端に長い text を渡して
 // catastrophic backtracking を引き起こすのは attacker (= LINE ユーザー) に可能。
-// 完全な ReDoS 解析器は scope 外。実用上の defense-in-depth として、match 対象の text を
-// 設定可能な上限で truncate する。256 文字でも `^(a+)+$` 級の指数的パターンは厳しいので、
+// 完全な ReDoS 解析器は scope 外。実用上の defense-in-depth として、上限を超える text に対しては
+// regex 評価をスキップして「no match」を返す。truncate して評価すると anchored pattern
+// (`^a+$` など) の意味論が壊れて誤マッチを引き起こすため、prefix で試すのは避ける。
 // 真の防御は operator がレビュー済みの安全な regex のみ使うこと。docs/routing.md / security.md を参照。
 const REGEX_MATCH_MAX_LEN = 256;
 
 function matchRegex(text: string, regexes: string[] | undefined): string | null {
   if (!regexes) return null;
-  const safeText =
-    text.length > REGEX_MATCH_MAX_LEN
-      ? text.slice(0, REGEX_MATCH_MAX_LEN)
-      : text;
+  if (text.length > REGEX_MATCH_MAX_LEN) return null;
   for (const r of regexes) {
     try {
-      if (new RegExp(r).test(safeText)) return r;
+      if (new RegExp(r).test(text)) return r;
     } catch {
       // ignore invalid regex; surfaced via config validate (future)
     }

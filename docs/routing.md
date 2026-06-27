@@ -43,7 +43,7 @@ LINE webhook event
 ## regex の match 仕様 (ReDoS 注意)
 
 - `regex: [...]` は `new RegExp(r).test(text)` で評価する
-- 各 regex を評価する前に text を 256 文字で切り詰める (catastrophic backtracking 対策の defense-in-depth)
+- text が 256 文字を超える場合は regex 評価をスキップして「no match」として扱う (catastrophic backtracking 対策の defense-in-depth)。truncate して prefix を試すと `^a+$` のような anchored pattern で意味論が壊れて誤マッチを引き起こすため、prefix では試さない
 - ただし JS RegExp は Cloudflare Workers で sandbox / timeout を持てないため、`^(a+)+$` のような operator が書いた catastrophic pattern は短い text でも CPU を使い切る。文字数 cap は最後の砦に過ぎず、本質的な防御は **operator が pattern をレビューすること**
 - 自分で書いた regex は信頼できる範囲に留め、外部から取り込んだ pattern や AI が生成した pattern はレビューしてから設定すること
 
