@@ -112,6 +112,21 @@ export const RouterConfigSchema = z
         });
       }
 
+      // messaging-api-proxy 経由で reply / push する service は permissions.sendMessages: true が
+      // 必須。default-deny で実装されている (handleMessagingApiProxy / dispatchHandler) ため、
+      // 未設定だと runtime で 403 となり気付きづらいので config-time エラーで止める。
+      if (
+        service.delivery.responseMode === "messaging-api-proxy" &&
+        service.permissions?.sendMessages !== true
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["services", index, "permissions", "sendMessages"],
+          message:
+            "messaging-api-proxy responseMode requires permissions.sendMessages = true",
+        });
+      }
+
       if (service.routing.role === "observe") {
         const sendsEnabled = service.permissions?.sendMessages === true;
         if (sendsEnabled) {

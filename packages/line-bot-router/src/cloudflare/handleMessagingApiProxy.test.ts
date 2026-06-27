@@ -6,6 +6,7 @@ import type {
   CreateVirtualReplyTokenInput,
   NormalizedLineEvent,
   OutboundMessage,
+  RouterConfig,
   StorageAdapter,
   VirtualReplyToken,
 } from "../core/index.js";
@@ -91,8 +92,34 @@ function buildEnv() {
 function configWithProxyService(opts: {
   sendMessages?: boolean | undefined;
   proxyMessagingApi?: boolean;
-}) {
-  return defineRouterConfig({
+}): RouterConfig {
+  // RouterConfigSchema は messaging-api-proxy + sendMessages:true 未設定を reject するので、
+  // runtime guard の defense-in-depth を試験する場合はあえて validate をバイパスして config 構築する。
+  // sendMessages 設定が valid な test (forwarded-headers / 501 / reply など) は defineRouterConfig を通す。
+  if (opts.sendMessages === true && (opts.proxyMessagingApi ?? true)) {
+    return defineRouterConfig({
+      services: [
+        {
+          id: "remind",
+          endpoint: "https://reminder.example.com",
+          serviceTokenEnv: "REMIND_TOKEN",
+          routing: { role: "handle", commands: ["/remind"] },
+          delivery: {
+            eventFormat: "line-compatible",
+            timing: "sync",
+            responseMode: "messaging-api-proxy",
+          },
+          proxy: { messagingApi: true },
+          permissions: { sendMessages: true },
+        },
+      ],
+    });
+  }
+  return {
+    router: {
+      infoCommand: "/router info",
+      unknownGroupPolicy: "ignore",
+    },
     services: [
       {
         id: "remind",
@@ -110,7 +137,7 @@ function configWithProxyService(opts: {
           : {}),
       },
     ],
-  });
+  } as RouterConfig;
 }
 
 function buildPushRequest(token = "service-token") {

@@ -35,9 +35,54 @@ test("defineRouterConfig rejects messaging-api-proxy without line-compatible for
             timing: "sync",
             responseMode: "messaging-api-proxy",
           },
+          permissions: { sendMessages: true },
         },
       ],
     }),
+  );
+});
+
+test("defineRouterConfig rejects messaging-api-proxy without permissions.sendMessages: true", () => {
+  // omitting permissions entirely
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "legacy",
+            endpoint: "https://example.com",
+            proxy: { messagingApi: true },
+            routing: { role: "handle", commands: ["/x"] },
+            delivery: {
+              eventFormat: "line-compatible",
+              timing: "sync",
+              responseMode: "messaging-api-proxy",
+            },
+          },
+        ],
+      }),
+    /sendMessages = true/,
+  );
+  // explicit sendMessages: false
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "legacy",
+            endpoint: "https://example.com",
+            proxy: { messagingApi: true },
+            routing: { role: "handle", commands: ["/x"] },
+            delivery: {
+              eventFormat: "line-compatible",
+              timing: "sync",
+              responseMode: "messaging-api-proxy",
+            },
+            permissions: { sendMessages: false },
+          },
+        ],
+      }),
+    /sendMessages = true/,
   );
 });
 

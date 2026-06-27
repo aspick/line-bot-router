@@ -18,6 +18,11 @@
   proxy: {
     messagingApi: true,
   },
+  permissions: {
+    // proxy 経由で reply / push する service は必須。
+    // 未設定だと defineRouterConfig が config-time エラーで止める。
+    sendMessages: true,
+  },
 }
 ```
 
