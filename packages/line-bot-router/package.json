@@ -1,0 +1,41 @@
+{
+  "name": "line-bot-router",
+  "version": "0.0.0",
+  "description": "Cloudflare Workers で動く config-driven な LINE Bot Router",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "src",
+    "migrations",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/core/index.ts",
+      "default": "./src/core/index.ts"
+    },
+    "./config": {
+      "types": "./src/config/index.ts",
+      "default": "./src/config/index.ts"
+    },
+    "./cloudflare": {
+      "types": "./src/cloudflare/index.ts",
+      "default": "./src/cloudflare/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx src/core/signature.test.ts src/core/routing.test.ts src/config/schema.test.ts src/cloudflare/handleServiceMessage.test.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "@types/node": "^26.0.1",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}

@@ -1,0 +1,14 @@
+# wrangler dev で読まれる開発用環境変数。
+# このファイルを .dev.vars にコピーして埋める。
+# 本番は `npx wrangler secret put <KEY>` で Cloudflare 側に登録する。
+
+LINE_CHANNEL_SECRET=your-line-channel-secret
+LINE_CHANNEL_ACCESS_TOKEN=your-line-channel-access-token
+
+ARCHIVE_WEBHOOK_SECRET=dev-archive-webhook-secret
+
+ATTENDANCE_WEBHOOK_SECRET=dev-attendance-webhook-secret
+ATTENDANCE_SERVICE_TOKEN=dev-attendance-service-token
+
+REMINDER_WEBHOOK_SECRET=dev-reminder-webhook-secret
+REMINDER_SERVICE_TOKEN=dev-reminder-service-token

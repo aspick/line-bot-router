@@ -1,0 +1,23 @@
+{
+  "name": "@templates/cloudflare-worker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "LINE Bot Router の Cloudflare Workers テンプレート",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:apply:local": "wrangler d1 migrations apply DB --local",
+    "db:apply:remote": "wrangler d1 migrations apply DB --remote"
+  },
+  "dependencies": {
+    "hono": "^4.5.0",
+    "line-bot-router": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240620.0",
+    "typescript": "^5.5.3",
+    "wrangler": "^3.66.0"
+  }
+}
