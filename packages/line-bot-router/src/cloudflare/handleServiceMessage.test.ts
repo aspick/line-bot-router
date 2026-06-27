@@ -20,11 +20,10 @@ class InMemoryStorage implements StorageAdapter {
   async saveEvent(event: NormalizedLineEvent): Promise<void> {
     this.events.push(event);
   }
-  async hasProcessed(id: string): Promise<boolean> {
-    return this.processed.has(id);
-  }
-  async markProcessed(id: string): Promise<void> {
+  async claimEvent(id: string): Promise<boolean> {
+    if (this.processed.has(id)) return false;
     this.processed.add(id);
+    return true;
   }
   async getConversationLock(): Promise<ConversationLock | null> {
     return null;
@@ -38,9 +37,13 @@ class InMemoryStorage implements StorageAdapter {
   ): Promise<VirtualReplyToken> {
     throw new Error("not used in this test");
   }
+  async peekVirtualReplyToken(): Promise<VirtualReplyToken | null> {
+    return null;
+  }
   async consumeVirtualReplyToken(): Promise<VirtualReplyToken | null> {
     return null;
   }
+  async deleteVirtualReplyToken(): Promise<void> {}
   async saveOutboundMessage(
     msg: OutboundMessage,
   ): Promise<{ inserted: boolean }> {
@@ -54,6 +57,11 @@ class InMemoryStorage implements StorageAdapter {
     }
     this.outbound.push(msg);
     return { inserted: true };
+  }
+  async deleteOutboundMessage(serviceId: string, dedupeKey: string): Promise<void> {
+    this.outbound = this.outbound.filter(
+      (o) => !(o.serviceId === serviceId && o.dedupeKey === dedupeKey),
+    );
   }
 }
 
@@ -211,6 +219,99 @@ test("/api/messages without dedupeKey always pushes", async () => {
   });
 
   assert.equal(pushCount, 2);
+});
+
+test("/api/messages rolls back dedupe row when LINE push returns 5xx", async () => {
+  const storage = new InMemoryStorage();
+  let pushCount = 0;
+  const fetchImpl = async (
+    input: RequestInfo | URL,
+  ): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/v2/bot/message/push")) {
+      pushCount += 1;
+      // first call fails, second succeeds
+      if (pushCount === 1) {
+        return new Response('{"message":"oops"}', {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const env = buildEnv();
+  const config = buildConfig();
+  const body = {
+    to: { type: "group", id: "Cgroup" },
+    messages: [{ type: "text", text: "hi" }],
+    dedupeKey: "evt-rollback",
+  };
+
+  const first = await handleServiceMessage({
+    request: buildRequest(body),
+    env,
+    config,
+    storage,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  assert.equal(first.status, 500, "first push surfaces LINE 500");
+
+  // The dedupe row must NOT persist for failed pushes — otherwise the retry would be
+  // silently deduped and the message permanently lost.
+  const retry = await handleServiceMessage({
+    request: buildRequest(body),
+    env,
+    config,
+    storage,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+
+  assert.equal(retry.status, 200, "retry actually reaches LINE");
+  assert.equal(pushCount, 2, "the retry must actually push, not be deduped");
+});
+
+test("/api/messages keeps dedupe row on LINE 4xx (non-retryable)", async () => {
+  const storage = new InMemoryStorage();
+  let pushCount = 0;
+  const fetchImpl = async (): Promise<Response> => {
+    pushCount += 1;
+    return new Response('{"message":"bad request"}', {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const env = buildEnv();
+  const config = buildConfig();
+  const body = {
+    to: { type: "group", id: "Cgroup" },
+    messages: [{ type: "text", text: "hi" }],
+    dedupeKey: "evt-bad",
+  };
+
+  await handleServiceMessage({
+    request: buildRequest(body),
+    env,
+    config,
+    storage,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  const second = await handleServiceMessage({
+    request: buildRequest(body),
+    env,
+    config,
+    storage,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+
+  assert.equal(pushCount, 1, "4xx is not retried — dedupe row stays");
+  assert.deepEqual(await second.json(), { deduped: true });
 });
 
 test("/api/messages rejects an invalid bearer token", async () => {

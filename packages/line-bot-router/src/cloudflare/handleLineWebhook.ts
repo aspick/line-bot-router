@@ -92,11 +92,11 @@ interface ProcessSingleEventInput {
 async function processSingleEvent(input: ProcessSingleEventInput): Promise<void> {
   const normalized = normalizeEvent(input.rawEvent);
 
-  if (await input.storage.hasProcessed(normalized.webhookEventId)) {
+  const claimed = await input.storage.claimEvent(normalized.webhookEventId);
+  if (!claimed) {
     return;
   }
   await input.storage.saveEvent(normalized);
-  await input.storage.markProcessed(normalized.webhookEventId);
 
   const lock = await input.storage.getConversationLock(
     normalized.sourceId,

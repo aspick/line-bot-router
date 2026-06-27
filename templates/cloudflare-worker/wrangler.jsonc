@@ -14,7 +14,9 @@
       "binding": "DB",
       "database_name": "line_bot_router",
       "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
-      "migrations_dir": "../../packages/line-bot-router/migrations"
+      // npm install / pnpm install 後の node_modules/line-bot-router/migrations を指す。
+      // monorepo dev でも pnpm が node_modules を symlink で張るため同じパスで解決可能。
+      "migrations_dir": "./node_modules/line-bot-router/migrations"
     }
   ],
 

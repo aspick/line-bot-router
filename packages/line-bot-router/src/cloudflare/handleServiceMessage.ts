@@ -146,11 +146,24 @@ export async function handleServiceMessage<TEnv extends BaseEnv = BaseEnv>(
     fetchImpl: input.fetchImpl,
   });
 
-  const res = await lineClient.push({
-    to: target,
-    messages: body.messages as Array<Record<string, unknown>>,
-    notificationDisabled: body.notificationDisabled,
-  });
+  let res: Awaited<ReturnType<typeof lineClient.push>>;
+  try {
+    res = await lineClient.push({
+      to: target,
+      messages: body.messages as Array<Record<string, unknown>>,
+      notificationDisabled: body.notificationDisabled,
+    });
+  } catch (err) {
+    if (body.dedupeKey) {
+      await storage.deleteOutboundMessage(service.id, body.dedupeKey);
+    }
+    throw err;
+  }
+
+  // LINE が 5xx / 429 を返した場合は dedupe row をロールバックして同 dedupeKey での retry を許容する。
+  if (body.dedupeKey && (res.status >= 500 || res.status === 429)) {
+    await storage.deleteOutboundMessage(service.id, body.dedupeKey);
+  }
   return new Response(res.body, {
     status: res.status,
     headers: { "content-type": res.contentType },

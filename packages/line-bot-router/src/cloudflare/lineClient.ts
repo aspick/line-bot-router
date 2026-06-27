@@ -8,13 +8,25 @@ export interface LineApiResponse {
   status: number;
   body: string;
   contentType: string;
+  /**
+   * child bot へそのまま返したい LINE 由来のヘッダ
+   * (`x-line-request-id`, `retry-after`, `x-line-accepted-request-id` など)。
+   * すべて小文字キーで保持する。
+   */
+  passthroughHeaders: Record<string, string>;
 }
 
 const DEFAULT_BASE_URL = "https://api.line.me";
 
+const PASSTHROUGH_RESPONSE_HEADERS = [
+  "x-line-request-id",
+  "x-line-accepted-request-id",
+  "retry-after",
+] as const;
+
 /**
  * LINE Messaging API への送信を担う薄いラッパ。
- * proxy 経路では、status / body / content-type をそのまま child bot へ返したい。
+ * proxy 経路では、status / body / content-type / 主要ヘッダをそのまま child bot へ返したい。
  */
 export class LineMessagingApiClient {
   private readonly token: string;
@@ -42,10 +54,16 @@ export class LineMessagingApiClient {
       },
       body,
     });
+    const passthroughHeaders: Record<string, string> = {};
+    for (const key of PASSTHROUGH_RESPONSE_HEADERS) {
+      const value = res.headers.get(key);
+      if (value !== null) passthroughHeaders[key] = value;
+    }
     return {
       status: res.status,
       body: await res.text(),
       contentType: res.headers.get("content-type") ?? "application/json",
+      passthroughHeaders,
     };
   }
 

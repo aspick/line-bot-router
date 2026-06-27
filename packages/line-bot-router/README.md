@@ -14,6 +14,12 @@ npm i line-bot-router hono zod
 pnpm add line-bot-router hono zod
 ```
 
+Cloudflare Workers アダプタ (`line-bot-router/cloudflare`) を使う場合は `@cloudflare/workers-types` を optional peer dependency として併用してください。Workers 以外のランタイムからは不要です。
+
+```bash
+npm i -D @cloudflare/workers-types
+```
+
 Node 20 以降、または Cloudflare Workers ランタイムで動作します。
 
 ## import surface

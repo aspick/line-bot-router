@@ -66,3 +66,36 @@ https://<your-worker>.workers.dev/line/webhook
 ```
 
 に設定します。
+
+## 7. 自分の userId / groupId を取得する (初回のみ)
+
+`adminUserIds` を埋めるためには自分の LINE userId が必要です。`/router info` コマンドが応答するように一時的に開放します。
+
+1. `router.config.ts` を次のように一時編集:
+
+   ```ts
+   router: {
+     // ...
+     adminUserIds: [],
+     setup: {
+       allowInfoCommandWithoutAdmin: true, // ← 一時的に true
+     },
+   }
+   ```
+
+2. `pnpm deploy` で deploy
+3. router を group / 1:1 talk に招待し、`/router info` と送る。返ってきた `sourceId` / `groupId` / `userId` を控える
+4. `router.config.ts` を元に戻す:
+
+   ```ts
+   router: {
+     adminUserIds: ["U..."], // 控えた userId
+     setup: {
+       allowInfoCommandWithoutAdmin: false, // ← 必ず false に戻す
+     },
+   }
+   ```
+
+5. もう一度 `pnpm deploy`
+
+`allowInfoCommandWithoutAdmin: true` のまま運用すると、router が居る group の任意ユーザーから内部 ID が読み出せてしまうので必ず手順 4 で戻してください。`defineRouterConfig` は `allowInfoCommandWithoutAdmin: true` かつ `adminUserIds` 空のとき deploy ログに警告を出します。

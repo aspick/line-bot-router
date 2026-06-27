@@ -25,7 +25,7 @@
 
 ## child bot 側
 
-`@line/bot-sdk` をそのまま使えます。違いは base URL を router に向けることだけ。
+`@line/bot-sdk` を base URL を router に向けて使えます。ただし v0.1 で proxy が受け付ける endpoint は下の表のとおりで、それ以外を叩くと 501 が返ります (詳細は「対応エンドポイント」節を参照)。
 
 ```ts
 import { messagingApi } from "@line/bot-sdk";
@@ -63,4 +63,12 @@ LINE_API_BASE_URL=https://router.example.com
 | POST   | `/v2/bot/message/validate/reply`    | LINE へ素通し     |
 | POST   | `/v2/bot/message/validate/push`     | LINE へ素通し     |
 
-v0.2 で `multicast`, `profile`, `group/summary`, `group/member/{userId}` を追加予定。Blob API はさらに先。
+未対応 endpoint (例: `GET /v2/bot/profile/{userId}`, `POST /v2/bot/message/multicast`) は **501 Not Implemented** を返します。v0.2 で `multicast`, `profile`, `group/summary`, `group/member/{userId}` を追加予定。Blob API はさらに先。
+
+## 転送されるリクエストヘッダ
+
+child → router → LINE の方向で、現状 router が LINE に転送するヘッダは以下:
+
+- `X-Line-Retry-Key` (`@line/bot-sdk` の `retryKey` オプションが付ける idempotency key)
+
+それ以外のヘッダ (任意の `X-*`、`User-Agent` 等) は転送しません。LINE → router → child の方向では `x-line-request-id`, `x-line-accepted-request-id`, `retry-after` をそのまま返します。
