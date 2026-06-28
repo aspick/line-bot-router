@@ -50,7 +50,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true,
     "exports": {
       ".": {
         "types": "./dist/core/index.d.ts",
