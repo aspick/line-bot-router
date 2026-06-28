@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r typecheck
+
+      - run: pnpm --filter line-bot-router test
+
+      - name: Build the published bundle
+        run: pnpm --filter line-bot-router build
+
+      - name: publint (strict)
+        run: pnpm --filter line-bot-router publint
+
+      - name: Pack tarball (applies publishConfig.exports)
+        working-directory: packages/line-bot-router
+        run: pnpm pack
+
+      - name: Publish (trusted publishing + provenance)
+        working-directory: packages/line-bot-router
+        run: npm publish line-bot-router-*.tgz --access public --provenance
