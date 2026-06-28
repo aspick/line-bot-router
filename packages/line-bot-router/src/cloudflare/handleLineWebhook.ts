@@ -92,11 +92,14 @@ interface ProcessSingleEventInput {
 async function processSingleEvent(input: ProcessSingleEventInput): Promise<void> {
   const normalized = normalizeEvent(input.rawEvent);
 
-  if (await input.storage.hasProcessed(normalized.webhookEventId)) {
+  // saveEvent は INSERT OR IGNORE INTO line_events で冪等。先に永続化することで、
+  // saveEvent が D1 一時障害で throw した場合に claim 行が残らず LINE retry で再試行できる。
+  // claimEvent を後にすることで dispatch 重複防止 (TOCTOU) は保たれる。
+  await input.storage.saveEvent(normalized);
+  const claimed = await input.storage.claimEvent(normalized.webhookEventId);
+  if (!claimed) {
     return;
   }
-  await input.storage.saveEvent(normalized);
-  await input.storage.markProcessed(normalized.webhookEventId);
 
   const lock = await input.storage.getConversationLock(
     normalized.sourceId,

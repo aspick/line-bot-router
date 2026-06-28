@@ -5,7 +5,7 @@ import type {
 } from "../core/index.js";
 import { D1Storage } from "./d1Storage.js";
 import { envSecretResolver, type BaseEnv } from "./env.js";
-import { LineMessagingApiClient } from "./lineClient.js";
+import { deriveLineRetryKey, LineMessagingApiClient } from "./lineClient.js";
 
 export interface HandleServiceMessageInput<TEnv extends BaseEnv = BaseEnv> {
   request: Request;
@@ -146,11 +146,34 @@ export async function handleServiceMessage<TEnv extends BaseEnv = BaseEnv>(
     fetchImpl: input.fetchImpl,
   });
 
-  const res = await lineClient.push({
-    to: target,
-    messages: body.messages as Array<Record<string, unknown>>,
-    notificationDisabled: body.notificationDisabled,
-  });
+  // dedupeKey が指定されていれば LINE 側でも idempotent にする。fetch reject 時に dedupe 行を
+  // ロールバックしても、LINE が同じ retry key を覚えていれば second push を deduplicate するので
+  // 重複メッセージは発生しない。retry key は (serviceId, dedupeKey) から決定論的に生成する。
+  const retryKey = body.dedupeKey
+    ? await deriveLineRetryKey(service.id, body.dedupeKey)
+    : undefined;
+
+  let res: Awaited<ReturnType<typeof lineClient.push>>;
+  try {
+    res = await lineClient.push(
+      {
+        to: target,
+        messages: body.messages as Array<Record<string, unknown>>,
+        notificationDisabled: body.notificationDisabled,
+      },
+      retryKey ? { retryKey } : {},
+    );
+  } catch (err) {
+    if (body.dedupeKey) {
+      await storage.deleteOutboundMessage(service.id, body.dedupeKey);
+    }
+    throw err;
+  }
+
+  // LINE が 5xx / 429 を返した場合は dedupe row をロールバックして同 dedupeKey での retry を許容する。
+  if (body.dedupeKey && (res.status >= 500 || res.status === 429)) {
+    await storage.deleteOutboundMessage(service.id, body.dedupeKey);
+  }
   return new Response(res.body, {
     status: res.status,
     headers: { "content-type": res.contentType },

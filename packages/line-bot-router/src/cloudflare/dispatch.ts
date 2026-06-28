@@ -124,13 +124,22 @@ export async function dispatchHandler(
     "x-line-bot-router-service": service.id,
   };
 
-  await addSignatureHeaders({
-    service,
-    body,
-    headers,
-    secrets: input.secrets,
-    deliveryType: "handle",
-  });
+  // addSignatureHeaders は secret 欠落時に throw する (fail-closed)。createVirtualReplyToken の
+  // 後でこの throw が出ると未使用 token が D1 に残るため、cleanup を保証する。
+  try {
+    await addSignatureHeaders({
+      service,
+      body,
+      headers,
+      secrets: input.secrets,
+      deliveryType: "handle",
+    });
+  } catch (err) {
+    if (virtualReplyToken) {
+      await input.storage.deleteVirtualReplyToken(virtualReplyToken);
+    }
+    throw err;
+  }
 
   const timeoutMs = service.delivery.timeoutMs ?? DEFAULT_SERVICE_TIMEOUT_MS;
   const fetchImpl = input.fetchImpl ?? fetch.bind(globalThis);
@@ -149,6 +158,9 @@ export async function dispatchHandler(
         err instanceof Error ? err.message : String(err)
       }`,
     );
+    // 仮想 reply token はここでは削除しない。AbortSignal.timeout や fetch reject の時点で
+    // POST body が child に到達済みの可能性があり、child は仮想 token を使って TTL (デフォルト 55s)
+    // 内に reply 可能。削除すると有効な reply が「invalid token」になる。未使用 token は TTL で reap される。
     return { routerReplied: false };
   }
 
@@ -164,6 +176,18 @@ export async function dispatchHandler(
       parsed = undefined;
     }
     if (!parsed?.reply) return { routerReplied: false, serviceResponseStatus: status };
+
+    // eventFormat.ts:37-40 で canReply は `permissions.sendMessages === true` から計算しており、
+    // child には capabilities.canReply: false を渡している。ここで送信権限を二重に確認しないと
+    // 「sendMessages 権限を持たないはずの observer 系 service」が response body に reply を含めると
+    // router が代行送信してしまい矛盾する。default-deny で揃える。
+    const sendsEnabled = service.permissions?.sendMessages === true;
+    if (!sendsEnabled) {
+      console.warn(
+        `[line-bot-router] service=${service.id} returned reply proposal but lacks permissions.sendMessages; dropping`,
+      );
+      return { routerReplied: false, serviceResponseStatus: status };
+    }
 
     const proposal: ReplyProposal = parsed.reply;
     const messages = (proposal.messages ?? []).slice(0, 5);
@@ -205,10 +229,12 @@ async function addSignatureHeaders(input: AddSignatureHeadersInput) {
   if (!input.service.secretEnv) return;
   const secret = input.secrets.get(input.service.secretEnv);
   if (!secret) {
-    console.warn(
-      `[line-bot-router] secretEnv ${input.service.secretEnv} is not set; sending unsigned to ${input.service.id}`,
+    // fail-closed: secretEnv が宣言されているのに env 側が空 / undefined だと、
+    // child は署名を期待しているので unsigned に落とすと契約違反 (検証してる child は 401 で全破棄、
+    // 検証していない child でも署名前提の運用方針が崩れる)。dispatch 自体を中断する。
+    throw new Error(
+      `[line-bot-router] secretEnv ${input.service.secretEnv} is declared for service ${input.service.id} but is empty in env; refusing to dispatch unsigned`,
     );
-    return;
   }
 
   if (input.service.delivery.eventFormat === "router-native") {

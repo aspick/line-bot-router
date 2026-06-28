@@ -31,22 +31,15 @@ export class D1Storage implements StorageAdapter {
       .run();
   }
 
-  async hasProcessed(webhookEventId: string): Promise<boolean> {
-    const row = await this.db
-      .prepare(`SELECT 1 FROM processed_events WHERE webhook_event_id = ?`)
-      .bind(webhookEventId)
-      .first();
-    return row !== null;
-  }
-
-  async markProcessed(webhookEventId: string): Promise<void> {
-    await this.db
+  async claimEvent(webhookEventId: string): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `INSERT OR IGNORE INTO processed_events (webhook_event_id, processed_at)
          VALUES (?, ?)`,
       )
       .bind(webhookEventId, new Date().toISOString())
       .run();
+    return Number(result.meta?.changes ?? 0) > 0;
   }
 
   async getConversationLock(
@@ -140,7 +133,7 @@ export class D1Storage implements StorageAdapter {
     };
   }
 
-  async consumeVirtualReplyToken(
+  async peekVirtualReplyToken(
     token: string,
     serviceId: string,
   ): Promise<VirtualReplyToken | null> {
@@ -164,6 +157,22 @@ export class D1Storage implements StorageAdapter {
     if (row.service_id !== serviceId) return null;
     if (row.used) return null;
     if (row.expires_at <= now) return null;
+    return {
+      virtualToken: row.virtual_token,
+      realReplyToken: row.real_reply_token,
+      serviceId: row.service_id,
+      sourceId: row.source_id,
+      expiresAt: row.expires_at,
+      used: false,
+    };
+  }
+
+  async consumeVirtualReplyToken(
+    token: string,
+    serviceId: string,
+  ): Promise<VirtualReplyToken | null> {
+    const peeked = await this.peekVirtualReplyToken(token, serviceId);
+    if (!peeked) return null;
 
     const update = await this.db
       .prepare(
@@ -175,14 +184,14 @@ export class D1Storage implements StorageAdapter {
       .run();
     if (!update.success || (update.meta?.changes ?? 0) === 0) return null;
 
-    return {
-      virtualToken: row.virtual_token,
-      realReplyToken: row.real_reply_token,
-      serviceId: row.service_id,
-      sourceId: row.source_id,
-      expiresAt: row.expires_at,
-      used: true,
-    };
+    return { ...peeked, used: true };
+  }
+
+  async deleteVirtualReplyToken(virtualToken: string): Promise<void> {
+    await this.db
+      .prepare(`DELETE FROM virtual_reply_tokens WHERE virtual_token = ?`)
+      .bind(virtualToken)
+      .run();
   }
 
   async saveOutboundMessage(
@@ -204,5 +213,18 @@ export class D1Storage implements StorageAdapter {
       .run();
     const changes = Number(result.meta?.changes ?? 0);
     return { inserted: changes > 0 };
+  }
+
+  async deleteOutboundMessage(
+    serviceId: string,
+    dedupeKey: string,
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `DELETE FROM outbound_messages
+          WHERE service_id = ? AND dedupe_key = ?`,
+      )
+      .bind(serviceId, dedupeKey)
+      .run();
   }
 }

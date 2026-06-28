@@ -8,9 +8,11 @@ export default defineRouterConfig({
       // 運用開始後はこちらに admin の userId を必ず登録する
     ],
     setup: {
-      // 初回セットアップで自分の userId / groupId を調べるとき true にする。
-      // 完了したら必ず false (または項目ごと削除) に戻す。
-      allowInfoCommandWithoutAdmin: true,
+      // 初回セットアップで自分の userId / groupId を調べる時だけ true にして deploy する。
+      // /router info の応答に sourceId / groupId / roomId / actorUserId が含まれるため、
+      // true のまま運用すると group 内の任意ユーザーから内部 ID が読み出せる情報漏洩になる。
+      // 必要な ID を取れたら必ず false (または項目ごと削除) に戻し、`adminUserIds` を埋めること。
+      allowInfoCommandWithoutAdmin: false,
     },
     virtualReplyToken: {
       ttlSeconds: 55,

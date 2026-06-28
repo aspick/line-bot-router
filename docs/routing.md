@@ -34,6 +34,19 @@ LINE webhook event
 - 失敗は warning ログを残すだけで握りつぶす (MVP)
 - v0.2 で Cloudflare Queues + retry をサポート予定
 
+## mention の match 仕様
+
+- `mentions: ["出欠bot"]` のようにキーワードを並べると、`@出欠bot ...` のように `@` プレフィクス付きで text に含まれる場合にのみマッチする
+- v0.1 以前にあった裸のキーワード部分一致 (`text.includes("bot")` のような) は意図しないハンドラ起動が起きるため廃止
+- 空文字を含めても自動的にスキップされる
+
+## regex の match 仕様 (ReDoS 注意)
+
+- `regex: [...]` は `new RegExp(r).test(text)` で評価する
+- text が 256 文字を超える場合は regex 評価をスキップして「no match」として扱う (catastrophic backtracking 対策の defense-in-depth)。truncate して prefix を試すと `^a+$` のような anchored pattern で意味論が壊れて誤マッチを引き起こすため、prefix では試さない
+- ただし JS RegExp は Cloudflare Workers で sandbox / timeout を持てないため、`^(a+)+$` のような operator が書いた catastrophic pattern は短い text でも CPU を使い切る。文字数 cap は最後の砦に過ぎず、本質的な防御は **operator が pattern をレビューすること**
+- 自分で書いた regex は信頼できる範囲に留め、外部から取り込んだ pattern や AI が生成した pattern はレビューしてから設定すること
+
 ## permissions
 
 - service に `permissions.allowedGroupIds` を指定すると、その group 以外には配送 / 送信を拒否

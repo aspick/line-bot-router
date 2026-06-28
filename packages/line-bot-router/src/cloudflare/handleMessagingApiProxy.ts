@@ -32,11 +32,27 @@ function passthrough(res: {
   status: number;
   body: string;
   contentType: string;
+  passthroughHeaders: Record<string, string>;
 }): Response {
+  const headers = new Headers({ "content-type": res.contentType });
+  for (const [name, value] of Object.entries(res.passthroughHeaders)) {
+    headers.set(name, value);
+  }
   return new Response(res.body, {
     status: res.status,
-    headers: { "content-type": res.contentType },
+    headers,
   });
+}
+
+const FORWARDED_REQUEST_HEADERS = ["x-line-retry-key"] as const;
+
+function pickForwardedHeaders(req: Request): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of FORWARDED_REQUEST_HEADERS) {
+    const v = req.headers.get(name);
+    if (v !== null) out[name] = v;
+  }
+  return out;
 }
 
 function extractBearer(req: Request): string | null {
@@ -98,7 +114,10 @@ export async function handleMessagingApiProxy<
   const secrets = envSecretResolver(input.env);
   const service = findServiceByToken(input.config, secrets, token);
   if (!service) return jsonError(401, "invalid service token");
-  if (service.permissions?.sendMessages === false) {
+  // handleServiceMessage と同じく default-deny。permissions.sendMessages を明示的に true にした
+  // service のみ送信を許可する。undefined を default-allow にすると、handleServiceMessage 経由では
+  // 403 で弾かれる service が proxy 経由でだけ通り抜けてしまう不整合を生むため統一する。
+  if (service.permissions?.sendMessages !== true) {
     return jsonError(403, "service is not allowed to send messages");
   }
   if (!service.proxy?.messagingApi) {
@@ -118,6 +137,7 @@ export async function handleMessagingApiProxy<
   const rawBody = await input.request.text();
   const contentType =
     input.request.headers.get("content-type") ?? "application/json";
+  const forwardedHeaders = pickForwardedHeaders(input.request);
 
   if (path === "/v2/bot/message/reply") {
     return proxyReply({
@@ -126,6 +146,7 @@ export async function handleMessagingApiProxy<
       lineClient,
       rawBody,
       contentType,
+      forwardedHeaders,
     });
   }
   if (path === "/v2/bot/message/push") {
@@ -136,17 +157,29 @@ export async function handleMessagingApiProxy<
       storage,
       rawBody,
       contentType,
+      forwardedHeaders,
     });
   }
   if (
     path === "/v2/bot/message/validate/reply" ||
     path === "/v2/bot/message/validate/push"
   ) {
-    const res = await lineClient.forward(path, rawBody, contentType);
+    const res = await lineClient.forward(
+      path,
+      rawBody,
+      contentType,
+      forwardedHeaders,
+    );
     return passthrough(res);
   }
 
-  return jsonError(404, `proxy endpoint not implemented: ${path}`);
+  // 未対応 endpoint は 501 で返す。v0.1 では reply/push/validate のみ対応。
+  // 404 だと「URL を間違えた」と読まれて debug が紛らわしいので、Not Implemented を明示する。
+  return jsonError(
+    501,
+    `proxy endpoint not implemented: ${input.request.method} ${path}. ` +
+      `v0.1 supports POST /v2/bot/message/{reply,push,validate/reply,validate/push} only.`,
+  );
 }
 
 interface ProxyReplyInput {
@@ -155,6 +188,7 @@ interface ProxyReplyInput {
   lineClient: LineMessagingApiClient;
   rawBody: string;
   contentType: string;
+  forwardedHeaders: Record<string, string>;
 }
 
 async function proxyReply(input: ProxyReplyInput): Promise<Response> {
@@ -181,11 +215,15 @@ async function proxyReply(input: ProxyReplyInput): Promise<Response> {
     );
   }
 
-  const consumed = await input.storage.consumeVirtualReplyToken(
+  // forward が失敗した場合に retry できなくなる事を防ぐため、まず peek (used を立てずに参照) して
+  // LINE への forward が成功してから初めて consume する。LINE 側 replyToken は本来 single-use なので
+  // 並行ペア両方が forward しても LINE がどちらか一方を拒否し、consume も atomic UPDATE なので
+  // 重複消費は起きない。
+  const peeked = await input.storage.peekVirtualReplyToken(
     body.replyToken,
     input.service.id,
   );
-  if (!consumed) {
+  if (!peeked) {
     return jsonError(
       400,
       "virtual replyToken is invalid, expired, or already used",
@@ -194,17 +232,27 @@ async function proxyReply(input: ProxyReplyInput): Promise<Response> {
 
   const forwardBody = JSON.stringify({
     ...body,
-    replyToken: consumed.realReplyToken,
+    replyToken: peeked.realReplyToken,
   });
   const res = await input.lineClient.forward(
     "/v2/bot/message/reply",
     forwardBody,
     "application/json",
+    input.forwardedHeaders,
   );
   if (res.status >= 200 && res.status < 300) {
+    const consumed = await input.storage.consumeVirtualReplyToken(
+      body.replyToken,
+      input.service.id,
+    );
+    if (!consumed) {
+      console.warn(
+        `[line-bot-router] reply succeeded but failed to mark virtual reply token used: ${body.replyToken}`,
+      );
+    }
     await input.storage.saveOutboundMessage({
       serviceId: input.service.id,
-      sourceId: consumed.sourceId,
+      sourceId: peeked.sourceId,
       kind: "reply",
       createdAt: new Date().toISOString(),
     });
@@ -219,6 +267,7 @@ interface ProxyPushInput {
   lineClient: LineMessagingApiClient;
   rawBody: string;
   contentType: string;
+  forwardedHeaders: Record<string, string>;
 }
 
 async function proxyPush(input: ProxyPushInput): Promise<Response> {
@@ -245,6 +294,7 @@ async function proxyPush(input: ProxyPushInput): Promise<Response> {
     "/v2/bot/message/push",
     input.rawBody,
     input.contentType,
+    input.forwardedHeaders,
   );
   if (res.status >= 200 && res.status < 300) {
     await input.storage.saveOutboundMessage({

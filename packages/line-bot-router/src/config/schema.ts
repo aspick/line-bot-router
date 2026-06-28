@@ -112,6 +112,36 @@ export const RouterConfigSchema = z
         });
       }
 
+      // messaging-api-proxy 経由で reply / push する service は permissions.sendMessages: true が
+      // 必須。default-deny で実装されている (handleMessagingApiProxy / dispatchHandler) ため、
+      // 未設定だと runtime で 403 となり気付きづらいので config-time エラーで止める。
+      if (
+        service.delivery.responseMode === "messaging-api-proxy" &&
+        service.permissions?.sendMessages !== true
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["services", index, "permissions", "sendMessages"],
+          message:
+            "messaging-api-proxy responseMode requires permissions.sendMessages = true",
+        });
+      }
+
+      // http-response の reply 経路も dispatch.ts で default-deny。reply を router 経由で返したい
+      // 場合は sendMessages: true が必須。reply を返さない handler (ack 専用) は responseMode: "none"
+      // を使うこと。observer 用 responseMode: "none" の route には影響しない。
+      if (
+        service.delivery.responseMode === "http-response" &&
+        service.permissions?.sendMessages !== true
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["services", index, "permissions", "sendMessages"],
+          message:
+            "http-response responseMode requires permissions.sendMessages = true (use responseMode: \"none\" if the handler never replies)",
+        });
+      }
+
       if (service.routing.role === "observe") {
         const sendsEnabled = service.permissions?.sendMessages === true;
         if (sendsEnabled) {
