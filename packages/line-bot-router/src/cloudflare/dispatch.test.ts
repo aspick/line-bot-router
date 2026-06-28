@@ -86,22 +86,41 @@ function makeEvent(replyToken: string | undefined): NormalizedLineEvent {
 const emptySecrets: SecretResolver = { get: () => undefined };
 
 function makeService(over: Partial<ServiceConfig>): ServiceConfig {
+  // defaults: http-response handler with sendMessages:true (satisfies the schema validate).
+  // Individual tests override `permissions` (or other fields) as needed.
+  const base = {
+    id: "svc",
+    endpoint: "https://svc.example.com",
+    routing: { role: "handle" as const, commands: ["/x"] },
+    delivery: {
+      eventFormat: "router-native" as const,
+      timing: "sync" as const,
+      responseMode: "http-response" as const,
+    },
+    permissions: { sendMessages: true },
+  };
   const cfg = defineRouterConfig({
-    services: [
-      {
-        id: "svc",
-        endpoint: "https://svc.example.com",
-        routing: { role: "handle", commands: ["/x"] },
-        delivery: {
-          eventFormat: "router-native",
-          timing: "sync",
-          responseMode: "http-response",
-        },
-        ...over,
-      },
-    ],
+    services: [{ ...base, ...over }],
   });
   return cfg.services[0]!;
+}
+
+/**
+ * Build a ServiceConfig directly, bypassing RouterConfigSchema, for tests that need to
+ * exercise the runtime guard for a config that the schema would (correctly) reject.
+ */
+function rawService(over: Partial<ServiceConfig>): ServiceConfig {
+  return {
+    id: "svc",
+    endpoint: "https://svc.example.com",
+    routing: { role: "handle", commands: ["/x"] },
+    delivery: {
+      eventFormat: "router-native",
+      timing: "sync",
+      responseMode: "http-response",
+    },
+    ...over,
+  } as ServiceConfig;
 }
 
 test("dispatchHandler throws when secretEnv is declared but env is empty (fail-closed)", async () => {
@@ -210,8 +229,9 @@ test("dispatchHandler does NOT delete virtual reply token when child fetch fails
 
 test("dispatchHandler refuses to call LINE reply when service lacks sendMessages permission", async () => {
   const storage = new InMemoryStorage();
-  // permissions.sendMessages not set → default-deny on http-response reply path
-  const service = makeService({});
+  // schema now rejects this combination at config time; rawService bypasses validate to
+  // exercise the runtime guard in dispatch.ts as defense in depth.
+  const service = rawService({ permissions: undefined });
   const childResponse = JSON.stringify({
     reply: { messages: [{ type: "text", text: "hello" }] },
   });

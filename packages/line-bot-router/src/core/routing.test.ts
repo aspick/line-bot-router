@@ -21,8 +21,17 @@ const baseDeliveryObserve = {
 };
 
 function makeConfig(services: RouterConfig["services"]): RouterConfig {
+  // routing.test.ts は decideRouting の挙動だけを試す。schema の
+  // 「http-response / messaging-api-proxy → sendMessages:true 必須」 validate を満たすため、
+  // handle / fallback role の service には permissions.sendMessages: true を補完する。
+  const enriched = services.map((s) => {
+    const needsSend =
+      (s.routing.role === "handle" || s.routing.role === "fallback") &&
+      !s.permissions;
+    return needsSend ? { ...s, permissions: { sendMessages: true } } : s;
+  });
   return RouterConfigSchema.parse({
-    services,
+    services: enriched,
   });
 }
 

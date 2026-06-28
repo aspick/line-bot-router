@@ -14,6 +14,7 @@ test("defineRouterConfig accepts a minimal valid config", () => {
           timing: "sync",
           responseMode: "http-response",
         },
+        permissions: { sendMessages: true },
       },
     ],
   });
@@ -39,6 +40,48 @@ test("defineRouterConfig rejects messaging-api-proxy without line-compatible for
         },
       ],
     }),
+  );
+});
+
+test("defineRouterConfig rejects http-response without permissions.sendMessages: true", () => {
+  // omitting permissions entirely
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "att",
+            endpoint: "https://example.com",
+            routing: { role: "handle", commands: ["/x"] },
+            delivery: {
+              eventFormat: "router-native",
+              timing: "sync",
+              responseMode: "http-response",
+            },
+          },
+        ],
+      }),
+    /http-response responseMode requires permissions.sendMessages = true/,
+  );
+  // explicit sendMessages: false
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "att",
+            endpoint: "https://example.com",
+            routing: { role: "handle", commands: ["/x"] },
+            delivery: {
+              eventFormat: "router-native",
+              timing: "sync",
+              responseMode: "http-response",
+            },
+            permissions: { sendMessages: false },
+          },
+        ],
+      }),
+    /http-response responseMode requires permissions.sendMessages = true/,
   );
 });
 
@@ -107,55 +150,62 @@ test("defineRouterConfig rejects observer with sendMessages = true", () => {
 });
 
 test("defineRouterConfig rejects duplicate service ids", () => {
-  assert.throws(() =>
-    defineRouterConfig({
-      services: [
-        {
-          id: "dup",
-          endpoint: "https://a.example.com",
-          routing: { role: "handle", commands: ["/a"] },
-          delivery: {
-            eventFormat: "router-native",
-            timing: "sync",
-            responseMode: "http-response",
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "dup",
+            endpoint: "https://a.example.com",
+            routing: { role: "handle", commands: ["/a"] },
+            delivery: {
+              eventFormat: "router-native",
+              timing: "sync",
+              responseMode: "http-response",
+            },
+            permissions: { sendMessages: true },
           },
-        },
-        {
-          id: "dup",
-          endpoint: "https://b.example.com",
-          routing: { role: "handle", commands: ["/b"] },
-          delivery: {
-            eventFormat: "router-native",
-            timing: "sync",
-            responseMode: "http-response",
+          {
+            id: "dup",
+            endpoint: "https://b.example.com",
+            routing: { role: "handle", commands: ["/b"] },
+            delivery: {
+              eventFormat: "router-native",
+              timing: "sync",
+              responseMode: "http-response",
+            },
+            permissions: { sendMessages: true },
           },
-        },
-      ],
-    }),
+        ],
+      }),
+    /duplicate service id/,
   );
 });
 
 test("defineRouterConfig rejects group.enabledServices referencing unknown service", () => {
-  assert.throws(() =>
-    defineRouterConfig({
-      services: [
-        {
-          id: "echo",
-          endpoint: "https://example.com",
-          routing: { role: "fallback" },
-          delivery: {
-            eventFormat: "router-native",
-            timing: "sync",
-            responseMode: "http-response",
+  assert.throws(
+    () =>
+      defineRouterConfig({
+        services: [
+          {
+            id: "echo",
+            endpoint: "https://example.com",
+            routing: { role: "fallback" },
+            delivery: {
+              eventFormat: "router-native",
+              timing: "sync",
+              responseMode: "http-response",
+            },
+            permissions: { sendMessages: true },
           },
-        },
-      ],
-      groups: [
-        {
-          id: "Cgroup",
-          enabledServices: ["does-not-exist"],
-        },
-      ],
-    }),
+        ],
+        groups: [
+          {
+            id: "Cgroup",
+            enabledServices: ["does-not-exist"],
+          },
+        ],
+      }),
+    /unknown service id/,
   );
 });

@@ -127,6 +127,21 @@ export const RouterConfigSchema = z
         });
       }
 
+      // http-response の reply 経路も dispatch.ts で default-deny。reply を router 経由で返したい
+      // 場合は sendMessages: true が必須。reply を返さない handler (ack 専用) は responseMode: "none"
+      // を使うこと。observer 用 responseMode: "none" の route には影響しない。
+      if (
+        service.delivery.responseMode === "http-response" &&
+        service.permissions?.sendMessages !== true
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["services", index, "permissions", "sendMessages"],
+          message:
+            "http-response responseMode requires permissions.sendMessages = true (use responseMode: \"none\" if the handler never replies)",
+        });
+      }
+
       if (service.routing.role === "observe") {
         const sendsEnabled = service.permissions?.sendMessages === true;
         if (sendsEnabled) {

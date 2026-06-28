@@ -63,6 +63,8 @@ export default defineRouterConfig({
 ## validate ルール
 
 - `messaging-api-proxy` の service は `eventFormat: "line-compatible"` と `proxy.messagingApi: true` が必須
+- `messaging-api-proxy` の service は `permissions.sendMessages: true` が必須 (proxy 経由で reply / push するため)
+- `http-response` の service も `permissions.sendMessages: true` が必須 (response body の reply を router が転送するため)。reply しない handler は `responseMode: "none"` を使うこと
 - observer に `sendMessages: true` を付けるとエラー (誤設定防止)
 - group の `enabledServices` に未知の service id があるとエラー
 - service id / group id の重複はエラー
